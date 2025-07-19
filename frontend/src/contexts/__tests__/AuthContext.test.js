@@ -10,8 +10,7 @@ jest.mock('../../services/apiClient', () => ({
   setAuthToken: jest.fn(),
   login: jest.fn(),
   register: jest.fn(),
-  getUserInfo: jest.fn(),
-  refreshToken: jest.fn()
+  getUserInfo: jest.fn()
 }));
 
 // 模拟Toast

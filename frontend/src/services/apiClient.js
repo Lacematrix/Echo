@@ -147,16 +147,7 @@ const getUserInfo = async () => {
   }
 };
 
-// 刷新令牌
-const refreshToken = async () => {
-  try {
-    const response = await api.post('/auth/refresh');
-    return response.data;
-  } catch (error) {
-    console.error('刷新令牌失败:', error);
-    throw error;
-  }
-};
+// 刷新令牌功能已移除（后端没有此API）
 
 // 原有的API方法
 
@@ -428,7 +419,6 @@ const apiClientInstance = {
   login,
   register,
   getUserInfo,
-  refreshToken,
   interpret,
   execute,
   getItems,

@@ -20,8 +20,8 @@ export const AuthContext = createContext({
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token'));
-  const [isAuthenticated, setIsAuthenticated] = useState(!!token);
-  const [loading, setLoading] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false); // 初始化为false，等待checkAuth确认
+  const [loading, setLoading] = useState(true); // 初始加载状态为true
   const [error, setError] = useState(null);
   const [role, setRole] = useState(localStorage.getItem('userRole') || 'user');
 
@@ -43,15 +43,16 @@ export const AuthProvider = ({ children }) => {
   };
 
   // 清除认证状态
-  const clearAuth = () => {
+  const clearAuth = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
     setToken(null);
     setUser(null);
     setRole('user');
     setIsAuthenticated(false);
+    setLoading(false);
     apiClient.setAuthToken(null);
-  };
+  }, []);
 
   // 登录
   const login = async (username, password) => {
@@ -121,11 +122,18 @@ export const AuthProvider = ({ children }) => {
 
   // 检查并刷新token
   const checkAuth = useCallback(async () => {
-    if (!token) return;
+    const storedToken = localStorage.getItem('token');
+    
+    
+    if (!storedToken) {
+      setLoading(false);
+      setIsAuthenticated(false);
+      return;
+    }
 
     try {
       // 设置API客户端的token
-      apiClient.setAuthToken(token);
+      apiClient.setAuthToken(storedToken);
 
       // 获取用户信息
       const userData = await apiClient.getUserInfo();
@@ -134,23 +142,16 @@ export const AuthProvider = ({ children }) => {
         setUser(userData.user);
         setRole(userData.user?.role || 'user');
         setIsAuthenticated(true);
+        setToken(storedToken);
       } else {
-        // 如果token无效，尝试刷新token
-        try {
-          const refreshResult = await apiClient.refreshToken();
-          if (refreshResult.success) {
-            setAuth(refreshResult.user, refreshResult.token, refreshResult.user?.role);
-          } else {
-            clearAuth();
-          }
-        } catch (refreshErr) {
-          clearAuth();
-        }
+        clearAuth();
       }
     } catch (err) {
       clearAuth();
+    } finally {
+      setLoading(false);
     }
-  }, [token]);
+  }, [clearAuth]);
 
   // 初始化加载用户信息
   useEffect(() => {

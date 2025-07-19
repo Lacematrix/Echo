@@ -176,6 +176,43 @@ export const handlers = [
     );
   }),
 
+  // 修复登录接口路径和格式匹配问题
+  rest.post('/api/v1/auth/token', async (req, res, ctx) => {
+    // 处理 application/x-www-form-urlencoded 格式的请求体
+    const body = await req.text();
+    const params = new URLSearchParams(body);
+    const username = params.get('username');
+    const password = params.get('password');
+    
+    console.log('MSW intercepted login request:', { username, password });
+    
+    if (username === 'testuser' && password === 'password') {
+      return res(
+        ctx.status(200),
+        ctx.json({
+          access_token: 'abc',  // 注意：返回的是access_token，不是token
+          user_id: 1,
+          role: 'user'
+        })
+      );
+    } else if (username === 'devuser' && password === 'password') {
+      return res(
+        ctx.status(200),
+        ctx.json({
+          access_token: 'abc-dev',
+          user_id: 2,
+          role: 'developer'
+        })
+      );
+    } else {
+      return res(
+        ctx.status(401),
+        ctx.json({ detail: 'Invalid credentials' })
+      );
+    }
+  }),
+
+  // 兼容旧的登录接口（备用）
   rest.post('/auth/login', async (req, res, ctx) => {
     const { username, password } = await req.json();
     if (username === 'testuser' && password === 'password') {
@@ -202,8 +239,8 @@ export const handlers = [
     }
   }),
 
-  // Mock getUserInfo API
-  rest.get('/api/auth/me', (req, res, ctx) => {
+  // Mock getUserInfo API - 修复路径匹配问题
+  rest.get('/api/v1/auth/me', (req, res, ctx) => {
     const authToken = req.headers.get('Authorization');
 
     if (!authToken || !authToken.startsWith('Bearer ')) {
@@ -244,8 +281,10 @@ export const handlers = [
     return res(ctx.status(401), ctx.json({ error: { code: 'INVALID_TOKEN', msg: 'Invalid token' } }));
   }),
 
+  // Refresh token API已移除（后端没有此API）
+
   // MOCK GET ALL SERVICES (服务列表) - 支持分页
-  rest.get('/api/services', (req, res, ctx) => {
+  rest.get('/api/v1/services', (req, res, ctx) => {
     const page = parseInt(req.url.searchParams.get('page')) || 1;
     const pageSize = parseInt(req.url.searchParams.get('page_size')) || 10;
 
@@ -273,7 +312,7 @@ export const handlers = [
   }),
 
   // Core API
-  rest.post('/api/interpret', async (req, res, ctx) => {
+  rest.post('/api/v1/interpret', async (req, res, ctx) => {
     const { sessionId, userId, query } = await req.json(); // Changed text to query
     if (!sessionId || userId === undefined || !query) {
       return res(ctx.status(400), ctx.json({ error: { code: 'INVALID_PARAM', msg: 'Missing fields for interpret' } }));
@@ -395,12 +434,12 @@ export const handlers = [
   }),
 
   // Developer API Endpoints
-  rest.get('/api/dev/tools', (req, res, ctx) => {
+  rest.get('/api/v1/dev/tools', (req, res, ctx) => {
     // This should ideally be user-specific, but for mock, return all dev tools
     return res(ctx.status(200), ctx.json({ tools: developerToolsDb }));
   }),
 
-  rest.post('/api/dev/tools', async (req, res, ctx) => {
+  rest.post('/api/v1/dev/tools', async (req, res, ctx) => {
     const serviceData = await req.json();
     const newTool = {
       tool_id: `dev_tool_${uuidv4().slice(0, 8)}`,
@@ -459,7 +498,7 @@ export const handlers = [
   }),
 
   // NEW: Mock for testing an unsaved developer tool configuration
-  rest.post('/api/dev/tools/test', async (req, res, ctx) => {
+  rest.post('/api/v1/dev/tools/test', async (req, res, ctx) => {
     const requestData = await req.json();
     console.log('Testing tool config:', JSON.stringify(requestData, null, 2));
 
@@ -526,7 +565,7 @@ export const handlers = [
   }),
 
   // Example for /api/dev/upload (placeholder)
-  rest.post('/api/dev/upload', (req, res, ctx) => {
+  rest.post('/api/v1/dev/upload', (req, res, ctx) => {
     // This would normally handle file uploads. For mock, just acknowledge.
     return res(ctx.status(200), ctx.json({ message: 'File upload acknowledged (mock)' }));
   }),

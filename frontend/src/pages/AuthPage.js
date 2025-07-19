@@ -131,9 +131,9 @@ const AuthPage = () => {
     if (isAuthenticated) {
       let from = location.state?.from || '/';
       // TODO 暂时无user页面
-      if (from === '/user') {
-        from = '/';
-      }
+      // if (from === '/user') {
+      //   from = '/';
+      // }
       console.log('用户已认证，准备跳转到:', from);
       navigate(from, { replace: true });
     }
