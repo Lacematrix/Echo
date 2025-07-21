@@ -116,7 +116,7 @@ const MainPage = () => {
                 speak(result.content, resetUIState);
 
             } else {
-                const textToConfirm = result.confirm_text || result.confirmText;
+                const textToConfirm = result.confirm_text || result.confirmTex || result.content;
                 if (textToConfirm) {
                     console.log(`[Session: ${result.sessionId || currentSessionId}] Confirmation text only received.`);
                     setPendingAction(result);
@@ -128,6 +128,7 @@ const MainPage = () => {
 
                     setIsConfirmModalOpen(true);
                     setStatus('idle');
+                    speak(textToConfirm, resetUIState);
 
                     // 注意：TTS播报由ConfirmationModal组件负责，这里不再重复调用
                 } else {

@@ -18,12 +18,25 @@ export const AuthContext = createContext({
 
 // 认证提供者组件
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
-  const [isAuthenticated, setIsAuthenticated] = useState(false); // 初始化为false，等待checkAuth确认
+  // 尝试从 localStorage 读取持久化的用户信息、token 和角色
+  const [user, setUser] = useState(() => {
+    try {
+      const storedUser = localStorage.getItem('user');
+      return storedUser ? JSON.parse(storedUser) : null;
+    } catch (e) {
+      console.error('解析本地用户数据失败', e);
+      return null;
+    }
+  });
+
+  const [token, setToken] = useState(() => localStorage.getItem('token'));
+
+  // 如果 token 存在则默认认为已登录，后续由 checkAuth 进一步验证
+  const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
+
   const [loading, setLoading] = useState(true); // 初始加载状态为true
   const [error, setError] = useState(null);
-  const [role, setRole] = useState(localStorage.getItem('userRole') || 'user');
+  const [role, setRole] = useState(() => localStorage.getItem('userRole') || (user?.role || 'user'));
 
   // 清除错误
   const clearError = () => setError(null);
@@ -36,6 +49,12 @@ export const AuthProvider = ({ children }) => {
     }
     setToken(authToken);
     setUser(userData);
+    // 持久化用户信息与角色，避免刷新后丢失
+    try {
+      localStorage.setItem('user', JSON.stringify(userData));
+    } catch (e) {
+      console.warn('无法持久化用户信息到 localStorage', e);
+    }
     setRole(userRole || 'user');
     setIsAuthenticated(true);
     setLoading(false);
@@ -46,6 +65,7 @@ export const AuthProvider = ({ children }) => {
   const clearAuth = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('userRole');
+    localStorage.removeItem('user');
     setToken(null);
     setUser(null);
     setRole('user');
@@ -123,19 +143,32 @@ export const AuthProvider = ({ children }) => {
   // 检查并刷新token
   const checkAuth = useCallback(async () => {
     const storedToken = localStorage.getItem('token');
-    
-    
+    const storedUserRaw = localStorage.getItem('user');
+
     if (!storedToken) {
+      // 没有 token，直接退出
       setLoading(false);
       setIsAuthenticated(false);
       return;
+    }
+
+    // 优先使用本地缓存的用户信息，提升用户体验
+    if (storedUserRaw) {
+      try {
+        const cachedUser = JSON.parse(storedUserRaw);
+        setUser(cachedUser);
+        setRole(cachedUser?.role || 'user');
+        setIsAuthenticated(true);
+      } catch (e) {
+        console.warn('读取本地用户信息失败', e);
+      }
     }
 
     try {
       // 设置API客户端的token
       apiClient.setAuthToken(storedToken);
 
-      // 获取用户信息
+      // 后台验证 token 并获取最新的用户信息
       const userData = await apiClient.getUserInfo();
 
       if (userData.success) {
@@ -143,11 +176,20 @@ export const AuthProvider = ({ children }) => {
         setRole(userData.user?.role || 'user');
         setIsAuthenticated(true);
         setToken(storedToken);
+        // 更新本地缓存
+        localStorage.setItem('user', JSON.stringify(userData.user));
       } else {
-        clearAuth();
+        // 如果后端返回失败且没有本地缓存，清除认证信息
+        if (!storedUserRaw) {
+          clearAuth();
+        }
       }
     } catch (err) {
-      clearAuth();
+      console.error('checkAuth 过程中出现错误', err);
+      // 仅在明确的 401 情况下清除认证；网络错误等情况下保留本地状态
+      if (err.originalError?.response?.status === 401) {
+        clearAuth();
+      }
     } finally {
       setLoading(false);
     }

@@ -98,7 +98,8 @@ const DeveloperConsolePage = () => {
     setError(null);
     try {
       // apiClient should be configured to send auth token if required by the backend for /api/dev/tools
-      const response = await apiClient.get('/api/dev/tools');
+      const response = await apiClient.get('/dev/tools');
+      console.log(response.data);
       setTools(response.data.tools || []);
     } catch (err) {
       console.error("Failed to fetch developer tools:", err);
@@ -120,7 +121,7 @@ const DeveloperConsolePage = () => {
   const handleToggleStatus = async (toolId, currentStatus) => {
     const newStatus = currentStatus === 'enabled' ? 'disabled' : 'enabled';
     try {
-      const response = await apiClient.put(`/api/dev/tools/${toolId}`, { status: newStatus });
+      const response = await apiClient.put(`/dev/tools/${toolId}`, { status: newStatus });
       setTools(prevTools =>
         prevTools.map(tool => tool.tool_id === toolId ? { ...tool, status: newStatus } : tool)
       );
@@ -135,7 +136,7 @@ const DeveloperConsolePage = () => {
   const handleDeleteTool = async (toolId) => {
     if (window.confirm('您确定要删除这个工具吗？此操作无法撤销。')) {
       try {
-        await apiClient.delete(`/api/dev/tools/${toolId}`);
+        await apiClient.delete(`/dev/tools/${toolId}`);
         setTools(prevTools => prevTools.filter(tool => tool.tool_id !== toolId));
         // TODO: Add Toast notification for success
       } catch (err) {

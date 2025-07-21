@@ -227,7 +227,7 @@ const execute = async (toolId, params, sessionId, userId) => {
 const getItems = async (page = 1, pageSize = 10) => {
   try {
     console.log(`获取首页列表... 页码: ${page}, 每页数量: ${pageSize}`);
-    const response = await api.get('/services', {
+    const response = await api.get('/tools', {
       params: {
         page,
         page_size: pageSize
@@ -237,7 +237,7 @@ const getItems = async (page = 1, pageSize = 10) => {
 
     // 返回分页数据结构
     return {
-      items: response.data.items || [],
+      items: response.data.tools || [],
       pagination: {
         current_page: response.data.current_page || page,
         total_pages: response.data.total_pages || 1,

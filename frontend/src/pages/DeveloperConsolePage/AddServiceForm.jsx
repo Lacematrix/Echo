@@ -123,6 +123,12 @@ const initialFormState = {
   cozeBotId: '',
   userInputVar: 'query',
   documentation: '',
+  requestSchema: '',
+  responseSchema: '',
+  serverName: '',
+  isPublic: false,
+  version: '1.0.0',
+  tags: '',
   testInput: '',
 };
 
@@ -133,9 +139,47 @@ const AddServiceForm = ({ onServiceAdded }) => {
   const [isTesting, setIsTesting] = useState(false);
   const [saveError, setSaveError] = useState(null);
 
+  // Helper: ensure all required fields are filled based on platform type
+  const validateForm = () => {
+    const {
+      serviceName,
+      serviceDescription,
+      endpointUrl,
+      apiKey,
+      userInputVar,
+      documentation,
+      platformType,
+      difyAppId,
+      cozeBotId,
+      version,
+      isPublic,
+    } = formData;
+
+    // Common required fields
+    if (
+      !serviceName.trim() ||
+      !serviceDescription.trim() ||
+      !endpointUrl.trim() ||
+      !apiKey.trim() ||
+      !userInputVar.trim() ||
+      !documentation.trim() ||
+      !version.trim() ||
+      !isPublic
+    ) {
+      return false;
+    }
+
+    // Platform-specific required fields
+    if (platformType === 'dify' && !difyAppId.trim()) return false;
+    if (platformType === 'coze' && !cozeBotId.trim()) return false;
+
+    return true;
+  };
+
   const handleChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = e.target;
+    const fieldValue = type === 'checkbox' ? checked : value;
+    setFormData(prev => ({ ...prev, [name]: fieldValue }));
   };
 
   // Reset conditional fields when platformType changes
@@ -237,8 +281,9 @@ const AddServiceForm = ({ onServiceAdded }) => {
   };
 
   const handleSaveService = async () => {
-    if (!isTestSuccessful) {
-      toast.warn('请先成功测试该服务后再保存。');
+    // Prevent save if form is incomplete
+    if (!validateForm()) {
+      toast.warn('请完整填写所有必填字段后再保存。');
       return;
     }
     setSaveError(null); // Clear previous save errors before attempting to save
@@ -252,65 +297,78 @@ const AddServiceForm = ({ onServiceAdded }) => {
       difyAppId,
       cozeBotId,
       userInputVar,
-      documentation // This comes from formData
+      documentation,
+      serverName,
+      isPublic,
+      version,
+      tags,
+      requestSchema,
+      responseSchema,
     } = formData;
 
-    let serviceDataPayload = {
-      name: serviceName,
-      description: serviceDescription,
-      platform_type: platformType,
-      endpoint_config: {
-        url: endpointUrl, // May be empty if not applicable (e.g. Dify/Coze if backend handles URL by ID)
-      },
-      authentication: null, // Default to null, will be set based on apiKey and platformType
-      documentation: documentation || '',
-    };
+    // Build endpoint with optional auth and platform specifics
+    const endpoint = { url: endpointUrl };
+    if (apiKey) endpoint.authentication = { type: 'bearer', token: apiKey };
 
-    // Platform-specific configurations and authentication overrides
     if (platformType === 'dify') {
-      serviceDataPayload.dify_config = {
+      endpoint.dify = {
         app_id: difyAppId,
         user_input_variable: userInputVar || 'query',
       };
-      if (apiKey) serviceDataPayload.authentication = { type: "bearer", token: apiKey };
     } else if (platformType === 'coze') {
-      serviceDataPayload.coze_config = {
+      endpoint.coze = {
         bot_id: cozeBotId,
         user_input_variable: userInputVar || 'query',
       };
-      if (apiKey) serviceDataPayload.authentication = { type: "bearer", token: apiKey };
     } else if (platformType === 'http') {
-      serviceDataPayload.http_config = {
+      endpoint.http = {
         user_input_variable: userInputVar || 'query',
       };
-      // For generic HTTP, if an API key is provided, assume Bearer token for now.
-      // This could be made more configurable (e.g. allowing user to specify header name/type).
-      if (apiKey) serviceDataPayload.authentication = { type: "bearer", token: apiKey };
     }
 
-    // If endpointUrl is not relevant for Dify/Coze because backend handles it via ID,
-    // ensure it's not sent or handled appropriately by backend if it is.
-    // If it IS the base URL, this is fine.
-    // For now, `endpointUrl` is included in `endpoint_config` if provided.
-    if (!endpointUrl && (platformType === 'dify' || platformType === 'coze')) {
-      // If endpointUrl is truly optional and not provided for Dify/Coze, 
-      // we might want to remove `url` from `endpoint_config` or send it as empty.
-      // The current structure sends it as `formData.endpointUrl` which could be an empty string.
-      // Let's ensure endpoint_config.url is only set if endpointUrl has a value.
-      if (formData.endpointUrl) {
-        serviceDataPayload.endpoint_config.url = formData.endpointUrl;
-      } else {
-        delete serviceDataPayload.endpoint_config.url; // Or set to null, depending on backend
-      }
+    // Parse JSON schemas
+    let requestSchemaObj = {};
+    let responseSchemaObj = {};
+    try {
+      requestSchemaObj = requestSchema ? JSON.parse(requestSchema) : {};
+    } catch (_) {
+      toast.error('请求 Schema 不是合法的 JSON 格式');
+      return;
     }
+    try {
+      responseSchemaObj = responseSchema ? JSON.parse(responseSchema) : {};
+    } catch (_) {
+      toast.error('响应 Schema 不是合法的 JSON 格式');
+      return;
+    }
+
+    const tagsArray = tags
+      .split(',')
+      .map(tag => tag.trim())
+      .filter(tag => tag.length > 0);
+
+    let serviceDataPayload = {
+      tool_id: serviceName,
+      name: serviceName,
+      type: platformType, // 使用平台类型作为工具类型
+      description: serviceDescription,
+      endpoint,
+      request_schema: requestSchemaObj,
+      response_schema: responseSchemaObj,
+      server_name: serverName,
+      is_public: isPublic,
+      version,
+      tags: tagsArray,
+      documentation: documentation || '',
+    };
 
     try {
       console.log("Attempting to save service with payload:", JSON.stringify(serviceDataPayload, null, 2));
       const response = await apiClient.createDeveloperService(serviceDataPayload);
 
       // createDeveloperService returns response.data directly, so we check response.message
-      if (response && response.message) {
-        toast.success(response.message);
+      if (response && response.created_at) {
+        toast.success("服务已保存成功，创建时间：" + response.created_at);
         if (typeof onServiceAdded === 'function') {
           onServiceAdded(); // Callback to refresh the list in the parent component
         }
@@ -397,12 +455,42 @@ const AddServiceForm = ({ onServiceAdded }) => {
       </FormGroup>
 
       <FormGroup>
+        <label htmlFor="serverName">服务器名称</label>
+        <input type="text" id="serverName" name="serverName" value={formData.serverName} onChange={handleChange} />
+      </FormGroup>
+
+      <FormGroup>
+        <label htmlFor="version">版本*</label>
+        <input type="text" id="version" name="version" value={formData.version} onChange={handleChange} required />
+      </FormGroup>
+
+      <FormGroup>
+        <label htmlFor="isPublic">是否公开*</label>
+        <input type="checkbox" id="isPublic" name="isPublic" checked={formData.isPublic} onChange={handleChange} required />
+      </FormGroup>
+
+      <FormGroup>
+        <label htmlFor="tags">标签 (逗号分隔)</label>
+        <input type="text" id="tags" name="tags" value={formData.tags} onChange={handleChange} placeholder="tag1, tag2" />
+      </FormGroup>
+
+      <FormGroup>
+        <label htmlFor="requestSchema">请求 Schema (JSON)</label>
+        <textarea id="requestSchema" name="requestSchema" value={formData.requestSchema} onChange={handleChange} placeholder='例如: {"query":"string"}' />
+      </FormGroup>
+
+      <FormGroup>
+        <label htmlFor="responseSchema">响应 Schema (JSON)</label>
+        <textarea id="responseSchema" name="responseSchema" value={formData.responseSchema} onChange={handleChange} placeholder='例如: {"answer":"string"}' />
+      </FormGroup>
+
+      <FormGroup>
         <label htmlFor="documentation">说明文档 (Markdown)*</label>
         <textarea id="documentation" name="documentation" value={formData.documentation} onChange={handleChange} placeholder="请详细描述服务用途、输入参数、示例输入和输出..." required />
       </FormGroup>
 
       <ButtonGroup>
-        <PrimaryButton onClick={handleSaveService} disabled={!isTestSuccessful || isTesting}>保存服务</PrimaryButton>
+        <PrimaryButton onClick={handleSaveService} disabled={!validateForm() || isTesting}>保存服务</PrimaryButton>
         <SecondaryButton onClick={handleClearForm} disabled={isTesting}>清空表单</SecondaryButton>
       </ButtonGroup>
 
