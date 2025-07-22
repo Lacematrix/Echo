@@ -333,6 +333,35 @@ const deleteDeveloperService = async (serviceId) => {
   }
 };
 
+// 新增: 获取后端服务器健康状态
+const getBackendHealth = async () => {
+  try {
+    console.log("检查后端服务器健康状态...");
+    // 直接使用 axios，不走 api 实例，避免自动拼接 API_PREFIX
+    const response = await axios.get(BASE_URL + '/health', {
+      timeout: 5000,
+    });
+    console.log("后端服务器健康响应:", response.data);
+    return response.data; // 期望 { status: 'ok', timestamp: number }
+  } catch (error) {
+    console.error('获取后端服务器健康状态失败:', error);
+    throw error;
+  }
+};
+
+// 新增: 获取 MCP Server 状态
+const getMcpServerStatus = async () => {
+  try {
+    console.log("检查 MCP Server 状态...");
+    const response = await api.get('/mcp/status'); // 使用 api 实例，会自动带上 API_PREFIX
+    console.log("MCP Server 状态响应:", response.data);
+    return response.data; // 期望包含 servers 和 summary 字段
+  } catch (error) {
+    console.error('获取 MCP Server 状态失败:', error);
+    throw error;
+  }
+};
+
 // 上传API包
 const uploadApiPackage = async (formData) => {
   try {
@@ -436,6 +465,9 @@ const apiClientInstance = {
   createDeveloperApplication,
   testSavedApiService,          // Renamed original testApiService
   testUnsavedDeveloperTool,     // Added new method
+  // 新增健康检查方法
+  getBackendHealth,
+  getMcpServerStatus,
 };
 
 export default apiClientInstance; 

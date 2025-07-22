@@ -2,7 +2,95 @@ import React, { useState, useEffect, useContext } from 'react';
 import { AuthContext } from '../../contexts/AuthContext'; // Assuming AuthContext is needed for user info or token
 import apiClient from '../../services/apiClient'; // Assuming a central apiClient exists
 import styled from 'styled-components';
-import AddServiceForm from './AddServiceForm'; // Import the new form component
+import AddServiceForm from './AddServiceForm'; // Import the form component
+import SystemHealthPanel from './SystemHealthPanel'; // Import the new health panel
+import Modal from '../../components/common/Modal'; // Modal for dialog form
+
+// Icon (simple hamburger)
+const BurgerIcon = () => (
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+
+// Layout containers
+const LayoutContainer = styled.div`
+  display: flex;
+  min-height: 80vh;
+  overflow-x: hidden; /* prevent body shift when sidebar slides */
+`;
+
+const Sidebar = styled.aside`
+  width: 200px;
+  border-right: 1px solid var(--border-color, #eaeaea);
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  align-self: flex-start;
+
+  @media (max-width: 768px) {
+    position: fixed;
+    left: 0;
+    top: 0;
+    background-color: #fff;
+    z-index: 1001;
+    transform: ${props => (props.open ? 'translateX(0)' : 'translateX(-100%)')};
+    transition: transform 0.3s ease;
+  }
+`;
+
+const SidebarOverlay = styled.div`
+  display: none;
+  @media (max-width: 768px) {
+    display: ${props => (props.open ? 'block' : 'none')};
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+  }
+`;
+
+const SidebarToggleButton = styled.button`
+  display: none;
+  @media (max-width: 768px) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-primary, #4FD1C5);
+    color: white;
+    border: none;
+    padding: 0.6rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+`;
+
+const SidebarButton = styled.button`
+  width: 100%;
+  padding: 0.8rem 1rem;
+  background-color: ${props => (props.active ? 'var(--color-primary, #4FD1C5)' : 'transparent')};
+  color: ${props => (props.active ? 'white' : 'var(--text-strong, #333)')};
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: ${props => (props.active ? '#3dbbab' : '#f6f6f6')};
+  }
+`;
+
+const ContentArea = styled.main`
+  flex: 1;
+  padding: 1rem 2rem;
+`;
 
 // Basic styling for the page and list (can be moved to a separate CSS file or enhanced)
 const PageWrapper = styled.div`
@@ -86,11 +174,38 @@ const AddToolButton = styled.button`
   &:hover { background-color: #224066; }
 `;
 
+// Sort control container
+const SortContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+`;
+
+const SortButton = styled.button`
+  padding: 0.4rem 0.9rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: var(--radius-sm, 4px);
+  background-color: ${props => (props.active ? 'var(--color-primary, #4FD1C5)' : 'white')};
+  color: ${props => (props.active ? 'white' : 'var(--text-strong, #333)')};
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background-color 0.2s ease;
+
+  &:hover {
+    background-color: ${props => (props.active ? '#3dbbab' : '#f7f7f7')};
+  }
+`;
+
 
 const DeveloperConsolePage = () => {
   const [tools, setTools] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [sortOrder, setSortOrder] = useState('desc'); // 'asc' | 'desc'
+  const [activeTab, setActiveTab] = useState('api'); // 'api' | 'health'
+  const [isAddModalOpen, setAddModalOpen] = useState(false);
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
   const { user } = useContext(AuthContext); // Get user info, potentially for filtering or display
 
   const fetchDeveloperTools = async () => {
@@ -147,6 +262,16 @@ const DeveloperConsolePage = () => {
     }
   };
 
+  // Derived list sorted by created_at
+  const sortedTools = React.useMemo(() => {
+    const sorted = [...tools].sort((a, b) => {
+      const dateA = new Date(a.created_at || a.createdAt || 0).getTime();
+      const dateB = new Date(b.created_at || b.createdAt || 0).getTime();
+      return sortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+    });
+    return sorted;
+  }, [tools, sortOrder]);
+
   // Placeholder for future navigation or modal for adding/editing tools
   // const handleAddTool = () => { // This button and handler will be removed
   //   console.log("Navigate to Add Tool form or open modal.");
@@ -155,6 +280,22 @@ const DeveloperConsolePage = () => {
   const handleEditTool = (toolId) => {
     console.log(`Navigate to Edit Tool form for ${toolId} or open modal.`);
     // Example: history.push(`/developer/tools/edit/${toolId}`)
+  };
+
+  const openAddModal = () => setAddModalOpen(true);
+  const closeAddModal = () => setAddModalOpen(false);
+
+  const toggleSidebar = () => setSidebarOpen(prev => !prev);
+  const closeSidebar = () => setSidebarOpen(false);
+
+  const handleTabClick = (tab) => {
+    setActiveTab(tab);
+    closeSidebar();
+  };
+
+  const handleServiceAddedAndClose = () => {
+    handleServiceAdded();
+    closeAddModal();
   };
 
   if (!user || user.role !== 'developer') {
@@ -166,57 +307,107 @@ const DeveloperConsolePage = () => {
     );
   }
 
-  if (isLoading) {
-    return <PageWrapper><p>正在加载工具...</p></PageWrapper>;
-  }
-
-  if (error && tools.length === 0) { // Show general error only if no tools are loaded yet
-    return <PageWrapper><p style={{ color: 'red' }}>{error}</p></PageWrapper>;
-  }
+  // Separate early loading state for API tab; Health panel handles its own loading
+  const showApiLoading = activeTab === 'api' && isLoading;
 
   return (
-    <PageWrapper>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h1>开发者控制台</h1>
-        {/* AddToolButton is removed */}
-      </div>
+    <LayoutContainer>
+      {/* Overlay for mobile */}
+      <SidebarOverlay open={isSidebarOpen} onClick={closeSidebar} />
 
-      <AddServiceForm onServiceAdded={handleServiceAdded} />
+      {/* Sidebar */}
+      <Sidebar open={isSidebarOpen}>
+        <SidebarButton active={activeTab === 'api'} onClick={() => handleTabClick('api')}>API 管理</SidebarButton>
+        <SidebarButton active={activeTab === 'health'} onClick={() => handleTabClick('health')}>系统健康</SidebarButton>
+      </Sidebar>
 
-      <h2>已上传的服务</h2>
-      {error && <p style={{ color: 'red' }}>列表更新错误: {error}</p>} {/* Show list-specific error here */}
-      {isLoading && tools.length === 0 && <p>正在加载列表...</p>} {/* Show loading only if tools aren't there yet */}
-      {!isLoading && tools.length === 0 && !error && (
-        <p>您还没有上传任何工具。</p>
-      )}
-      {!isLoading && tools.length > 0 && (
-        <ToolList>
-          {tools.map(tool => (
-            <ToolListItem key={tool.tool_id}>
-              <div>
-                <h3>{tool.name}</h3>
-                <p>ID: <span>{tool.tool_id}</span></p>
-                <p>平台: <span>{tool.endpoint?.platform_type?.toUpperCase() || 'N/A'}</span></p>
-                <p>状态: <span style={{ color: tool.status === 'enabled' ? 'green' : 'orange' }}>
-                  {tool.status === 'enabled' ? '已启用' : '已禁用'}
-                </span></p>
-                <p>描述: {tool.description || '无描述'}</p>
+      {/* Main content area */}
+      <ContentArea>
+        {activeTab === 'api' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h1>开发者控制台</h1>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <AddToolButton onClick={openAddModal}>添加服务</AddToolButton>
+                <SidebarToggleButton onClick={toggleSidebar}>
+                  <BurgerIcon />
+                </SidebarToggleButton>
               </div>
-              <ActionsContainer>
-                <EditButton onClick={() => handleEditTool(tool.tool_id)}>编辑</EditButton>
-                <ToggleStatusButton
-                  onClick={() => handleToggleStatus(tool.tool_id, tool.status)}
-                  disabled={tool.status === 'disabled'} // Style prop for color based on disabled status
-                >
-                  {tool.status === 'enabled' ? '禁用' : '启用'}
-                </ToggleStatusButton>
-                <DeleteButton onClick={() => handleDeleteTool(tool.tool_id)}>删除</DeleteButton>
-              </ActionsContainer>
-            </ToolListItem>
-          ))}
-        </ToolList>
-      )}
-    </PageWrapper>
+            </div>
+
+            {/* Sort controls */}
+            <SortContainer>
+              <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary, #666)' }}>提交历史排序:</span>
+              <SortButton
+                active={sortOrder === 'desc'}
+                onClick={() => setSortOrder('desc')}
+              >最新</SortButton>
+              <SortButton
+                active={sortOrder === 'asc'}
+                onClick={() => setSortOrder('asc')}
+              >最早</SortButton>
+            </SortContainer>
+
+            {error && <p style={{ color: 'red' }}>列表更新错误: {error}</p>}
+            {showApiLoading && <p>正在加载列表...</p>}
+            {!showApiLoading && sortedTools.length === 0 && !error && (
+              <p>您还没有上传任何工具。</p>
+            )}
+            {!showApiLoading && sortedTools.length > 0 && (
+              <ToolList>
+                {sortedTools.map(tool => (
+                  <ToolListItem key={tool.tool_id}>
+                    <div>
+                      <h3>{tool.name}</h3>
+                      <p>ID: <span>{tool.tool_id}</span></p>
+                      <p>提交时间: <span>{tool.created_at}</span></p>
+                      <p>平台: <span>{tool.endpoint?.platform_type?.toUpperCase() || 'N/A'}</span></p>
+                      <p>状态: <span style={{ color: tool.status === 'enabled' ? 'green' : 'orange' }}>
+                        {tool.status === 'enabled' ? '已启用' : '已禁用'}
+                      </span></p>
+                      <p>描述: {tool.description || '无描述'}</p>
+                    </div>
+                    <ActionsContainer>
+                      <EditButton onClick={() => handleEditTool(tool.tool_id)}>编辑</EditButton>
+                      <ToggleStatusButton
+                        onClick={() => handleToggleStatus(tool.tool_id, tool.status)}
+                        disabled={tool.status === 'disabled'}
+                      >
+                        {tool.status === 'enabled' ? '禁用' : '启用'}
+                      </ToggleStatusButton>
+                      <DeleteButton onClick={() => handleDeleteTool(tool.tool_id)}>删除</DeleteButton>
+                    </ActionsContainer>
+                  </ToolListItem>
+                ))}
+              </ToolList>
+            )}
+          </>
+        )}
+
+        {activeTab === 'health' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h1>系统健康监控</h1>
+              <SidebarToggleButton onClick={toggleSidebar}>
+                <BurgerIcon />
+              </SidebarToggleButton>
+            </div>
+            <SystemHealthPanel />
+          </>
+        )}
+      </ContentArea>
+
+      {/* Add Service Modal */}
+      <Modal
+        isOpen={isAddModalOpen}
+        onClose={closeAddModal}
+        title="添加新服务"
+        width="90%"
+        maxWidth="800px"
+      >
+        <AddServiceForm onServiceAdded={handleServiceAddedAndClose} />
+      </Modal>
+    </LayoutContainer>
   );
 };
 

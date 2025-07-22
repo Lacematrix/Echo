@@ -152,7 +152,6 @@ const AddServiceForm = ({ onServiceAdded }) => {
       difyAppId,
       cozeBotId,
       version,
-      isPublic,
     } = formData;
 
     // Common required fields
@@ -163,8 +162,7 @@ const AddServiceForm = ({ onServiceAdded }) => {
       !apiKey.trim() ||
       !userInputVar.trim() ||
       !documentation.trim() ||
-      !version.trim() ||
-      !isPublic
+      !version.trim()
     ) {
       return false;
     }
@@ -348,7 +346,7 @@ const AddServiceForm = ({ onServiceAdded }) => {
       .filter(tag => tag.length > 0);
 
     let serviceDataPayload = {
-      tool_id: serviceName,
+      tool_id: serviceName + '-' + new Date().getTime(),
       name: serviceName,
       type: platformType, // 使用平台类型作为工具类型
       description: serviceDescription,
@@ -465,8 +463,8 @@ const AddServiceForm = ({ onServiceAdded }) => {
       </FormGroup>
 
       <FormGroup>
-        <label htmlFor="isPublic">是否公开*</label>
-        <input type="checkbox" id="isPublic" name="isPublic" checked={formData.isPublic} onChange={handleChange} required />
+        <label htmlFor="isPublic">是否公开</label>
+        <input type="checkbox" id="isPublic" name="isPublic" checked={formData.isPublic} onChange={handleChange} />
       </FormGroup>
 
       <FormGroup>
