@@ -243,34 +243,26 @@ const ConfirmationModal = ({
       setTtsFinished(false);
       setShowButtons(false); // 初始不显示按钮
 
-      // 使用函数版本设置状态，防止引用旧状态
-      const timer = setTimeout(() => {
-        console.log("ConfirmationModal: 开始播放确认文本...");
-        // 添加回调函数，在TTS结束后设置状态
-        speak(confirmText, 'zh-CN', 1, 1, () => {
-          console.log("ConfirmationModal: TTS播放完成，设置ttsFinished=true");
-          setTtsFinished(true);
-          setShowButtons(true);
-          console.log("ConfirmationModal: 显示按钮和语音输入选项");
+      // 直接开始播放确认文本，避免因 React 重新渲染导致计时器被清除而无法触发 speak()
+      console.log("ConfirmationModal: 开始播放确认文本...");
 
-          // 通知MainPage TTS完成
-          if (onTTSCompleted) {
-            onTTSCompleted();
-          }
+      speak(confirmText, 'zh-CN', 1, 1, () => {
+        console.log("ConfirmationModal: TTS播放完成，设置ttsFinished=true");
+        setTtsFinished(true);
+        setShowButtons(true);
+        console.log("ConfirmationModal: 显示按钮和语音输入选项");
 
-          // 如果启用了语音确认，自动启动语音监听
-          if (useVoiceConfirmation) {
-            console.log("ConfirmationModal: 自动启动语音监听");
-            setTimeout(() => {
-              handleStartVoiceListening();
-            }, 300);
-          }
-        });
-      }, 300);
+        // 通知 MainPage TTS 完成
+        if (onTTSCompleted) {
+          onTTSCompleted();
+        }
+      });
 
+      // 清理函数仅在对话框关闭时才执行，避免在同一次打开期间打断正在播放的 TTS
       return () => {
-        clearTimeout(timer);
-        cancelTTS();
+        if (!isOpen) {
+          cancelTTS();
+        }
       };
     }
 
@@ -286,7 +278,7 @@ const ConfirmationModal = ({
         stopListening();
       }
     }
-  }, [isOpen, confirmText, useVoiceConfirmation, speak, cancelTTS, isSTTListening, stopListening, handleStartVoiceListening]);
+  }, [isOpen, confirmText, useVoiceConfirmation, speak, cancelTTS, isSTTListening, stopListening]);
 
   // 安全超时，确保即使TTS回调失败也会显示按钮
   useEffect(() => {
@@ -390,40 +382,7 @@ const ConfirmationModal = ({
         <ModalText theme={theme}>
           {confirmText}
         </ModalText>
-
-
-
-        {/* 使用普通HTML元素和内联样式，避免样式组件可能的问题 */}
-        {(ttsFinished || !isTTSSpeaking) && !isConfirmListening && (
-          <div style={{
-            textAlign: 'center',
-            margin: '20px 0',
-          }}>
-            <button
-              id="voice-input-button"
-              onClick={handleStartVoiceListening}
-              style={{
-                backgroundColor: '#8A2BE2',
-                color: 'white',
-                border: 'none',
-                borderRadius: '8px',
-                padding: '12px 20px',
-                fontSize: '16px',
-                fontWeight: 'bold',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.2)',
-                width: '80%',
-              }}
-            >
-              <AudioOutlined style={{ marginRight: '8px', fontSize: '18px' }} />
-              点击开始语音输入
-            </button>
-          </div>
-        )}
+        {/* 录音按钮已移除，根据需求仅保留语音识别自动触发逻辑 */}
 
         {isConfirmListening && (
           <ListeningStatus theme={theme}>

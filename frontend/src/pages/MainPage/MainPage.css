@@ -335,3 +335,100 @@
 .status-error {
   background-color: #FF5252;
 }
+
+/* 新增对话框容器 */
+.conversation-box {
+  width: 100%;
+  max-width: 800px;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
+  gap: 12px;
+  height: 70vh; /* 固定高度 */
+}
+
+/* 对话框内消息列表自动滚动 */
+.conversation-box .messages-container {
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px; /* space for scrollbar */
+}
+
+/* 清除历史按钮 */
+.clear-history-btn {
+  align-self: flex-end;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.clear-history-btn:hover {
+  color: var(--primary-color);
+}
+
+/* 覆盖录音组件在对话框内的位置 */
+.conversation-box .voice-recorder-container {
+  position: relative;
+  bottom: unset;
+  left: unset;
+  transform: none;
+  margin-top: 12px;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .conversation-box {
+    padding: 12px;
+    min-height: 70vh;
+  }
+
+  .clear-history-btn {
+    font-size: 13px;
+  }
+}
+
+/* 进度条弹窗 */
+.progress-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-index-modal);
+  animation: fadeIn var(--transition-normal) ease;
+}
+
+.progress-modal-content {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 24px 32px;
+  width: 90%;
+  max-width: 420px;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 768px) {
+  .conversation-box {
+    height: 75vh;
+  }
+  .progress-modal-content {
+    padding: 20px;
+  }
+}

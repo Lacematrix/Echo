@@ -26,6 +26,16 @@ const MainPage = () => {
 
     const [pendingAction, setPendingAction] = useState(null);
     const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+
+    // 多轮对话消息历史
+    const [messages, setMessages] = useState([]);
+
+    // 统一添加消息的工具函数
+    const addMessage = useCallback((content, role = 'ai') => {
+        setMessages(prev => [...prev, { id: Date.now() + Math.random(), role, content }]);
+    }, []);
+
+    // 确认弹窗文本与结果数据
     const [confirmText, setConfirmText] = useState('');
     const [resultData, setResultData] = useState(null);
 
@@ -71,7 +81,31 @@ const MainPage = () => {
         setStatus('thinking');
 
         try {
-            const result = await apiClient.interpret(transcript, currentSessionId, 1);
+            // 构造会话历史 + 当前用户发言
+            const conversationPayload = (() => {
+                const pairs = [];
+                let lastUser = null;
+                messages.forEach(msg => {
+                    if (msg.role === 'user') {
+                        lastUser = msg.content;
+                    } else if (msg.role === 'ai' && lastUser !== null) {
+                        pairs.push({ user: lastUser, assistant: msg.content });
+                        lastUser = null;
+                    }
+                });
+                // 添加当前这次用户发言
+                pairs.push({ user: transcript });
+                return JSON.stringify(pairs);
+            })();
+
+            const result = await apiClient.interpret(conversationPayload, currentSessionId, 1);
+            // 暂时使用本地测试数据
+            // const result = {
+            //     sessionId: currentSessionId,
+            //     tool_calls: [],
+            //     confirm_text: '您确定要执行此操作吗？',
+            //     confirmText: '您确定要执行此操作吗？',
+            // };
             console.log(`[Session: ${currentSessionId}] Interpret API Result:`, result);
 
             // 检查并保存返回的sessionId
@@ -93,6 +127,8 @@ const MainPage = () => {
                 setPendingAction(result);
                 const textToConfirm = result.confirm_text || result.confirmText || '您确定要执行此操作吗？';
                 setConfirmText(textToConfirm);
+                // 记录 AI 消息
+                addMessage(textToConfirm, 'ai');
 
                 // 阶段4: 完成 (completed) - 短暂显示
                 setStatus('completed');
@@ -112,6 +148,7 @@ const MainPage = () => {
                 await new Promise(resolve => setTimeout(resolve, 800));
 
                 setLastResponse({ status: 'info', message: result.content });
+                addMessage(result.content, 'ai');
                 setStatus('speaking');
                 speak(result.content, resetUIState);
 
@@ -121,6 +158,8 @@ const MainPage = () => {
                     console.log(`[Session: ${result.sessionId || currentSessionId}] Confirmation text only received.`);
                     setPendingAction(result);
                     setConfirmText(textToConfirm);
+                    // 记录 AI 消息
+                    addMessage(textToConfirm, 'ai');
 
                     // 阶段4: 完成 (completed)
                     setStatus('completed');
@@ -128,8 +167,6 @@ const MainPage = () => {
 
                     setIsConfirmModalOpen(true);
                     setStatus('idle');
-                    speak(textToConfirm, resetUIState);
-
                     // 注意：TTS播报由ConfirmationModal组件负责，这里不再重复调用
                 } else {
                     console.log(`[Session: ${result.sessionId || currentSessionId}] Response format detection:`, result);
@@ -140,6 +177,7 @@ const MainPage = () => {
 
                     const message = JSON.stringify(result);
                     setLastResponse({ status: 'info', message: `收到未知格式的响应: ${message}` });
+                    addMessage(`收到未知格式的响应: ${message}`, 'ai');
                     setStatus('speaking');
                     speak("收到未知格式的响应，请检查控制台", resetUIState);
                 }
@@ -153,6 +191,7 @@ const MainPage = () => {
 
             const message = `抱歉，理解您的指令时出错：${error.message || '网络请求失败'}`;
             setLastResponse({ status: 'error', message });
+            addMessage(message, 'ai');
             setStatus('error');
             speak(message, resetUIState);
 
@@ -162,13 +201,18 @@ const MainPage = () => {
             // 错误后5秒自动重置
             resetTimerRef.current = setTimeout(resetUIState, 5000);
         }
-    }, [speak, resetUIState, startListening, isListening, stopListening]);
+    }, [speak, resetUIState, startListening, isListening, stopListening, addMessage, messages]);
 
     const handleVoiceResult = useCallback(async (transcript) => {
         // 清除任何现有的重置计时器
         if (resetTimerRef.current) {
             clearTimeout(resetTimerRef.current);
             resetTimerRef.current = null;
+        }
+
+        // 记录用户消息
+        if (transcript) {
+            addMessage(transcript, 'user');
         }
 
         const currentSessionId = sessionIdRef.current;
@@ -188,7 +232,7 @@ const MainPage = () => {
 
         // 运行四阶段进度流程
         await runProgressStages(transcript, currentSessionId);
-    }, [runProgressStages]);
+    }, [runProgressStages, addMessage]);
 
     // 提取工具执行和结果处理逻辑到单独的函数
     const executeToolAndHandleResult = useCallback(async (toolId, params, currentSessionId, userId) => {
@@ -238,6 +282,9 @@ const MainPage = () => {
 
                 console.log(`[Session: ${execResult.sessionId || currentSessionId}] 即将播报结果: "${textToSpeak}"`);
 
+                // 记录 AI 消息
+                addMessage(textToSpeak, 'ai');
+
                 // 使用增强的流式语音播报，确保状态正确更新
                 speak(textToSpeak, () => {
                     setIsConfirming(false); // 重置确认状态锁
@@ -248,8 +295,9 @@ const MainPage = () => {
                 const message = `抱歉，执行操作时失败：${execResult.error?.message || '未知错误'}`;
                 setResultData({ status: 'error', message });
                 setStatus('error');
+                addMessage(message, 'ai');
                 speak(message, () => {
-                    setIsConfirming(false); // 重置确认状态锁
+                    setIsConfirming(false);
                     resetUIState();
                 });
 
@@ -261,15 +309,16 @@ const MainPage = () => {
             const message = `抱歉，执行操作时出错：${error.message || '网络请求失败'}`;
             setResultData({ status: 'error', message });
             setStatus('error');
+            addMessage(message, 'ai');
             speak(message, () => {
-                setIsConfirming(false); // 重置确认状态锁
+                setIsConfirming(false);
                 resetUIState();
             });
 
             // 错误后5秒自动重置
             resetTimerRef.current = setTimeout(resetUIState, 5000);
         }
-    }, [speak, resetUIState]);
+    }, [speak, resetUIState, addMessage]);
 
     const [isConfirming, setIsConfirming] = useState(false); // 添加确认状态锁
 
@@ -284,6 +333,11 @@ const MainPage = () => {
         setIsConfirming(true); // 设置确认状态锁
         setIsConfirmModalOpen(false);
 
+        // 跳转（滚动）到触发弹窗的位置，方便用户继续查看
+        if (typeof document !== 'undefined') {
+            document.querySelector('.messages-container')?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+
         // 取消可能正在播放的确认文本
         if (isSpeaking) {
             cancelTTS();
@@ -292,48 +346,63 @@ const MainPage = () => {
             // stopListening(); // useVoice Hook 的 onresult 后会自动停止
         }
 
-        // 处理用户确认
-        setStatus('executing');
-
-        // 从pendingAction获取工具信息
-        let toolId, params, userId = 1;
-
+        // 如果 pendingAction 存在工具调用，则执行；否则继续对话
         if (pendingAction?.tool_calls && pendingAction.tool_calls.length > 0) {
-            // 新格式: 工具调用数组
+            setStatus('executing');
+
             const firstToolCall = pendingAction.tool_calls[0];
-            toolId = firstToolCall.tool_id;
-            params = firstToolCall.parameters || {};
+            const toolId = firstToolCall.tool_id;
+            const params = firstToolCall.parameters || {};
+            const userId = 1;
+            const currentSessionId = sessionIdRef.current;
+
+            // 清除任何现有的自动重置计时器
+            if (resetTimerRef.current) {
+                clearTimeout(resetTimerRef.current);
+                resetTimerRef.current = null;
+            }
+
+            console.log(`[Session: ${currentSessionId}] 准备执行工具: ${toolId}，参数:`, params);
+            executeToolAndHandleResult(toolId, params, currentSessionId, userId);
         } else {
-            console.warn(`[Session: ${sessionIdRef.current}] 没有明确的 tool_calls，尝试执行... (可能需要后端支持无工具的确认流程)`);
-            // 这里可以尝试设置一个默认动作或提示错误
-            // 暂时允许继续，看后端execute如何处理
-            toolId = pendingAction?.action || 'default_confirm_action'; // 假设有一个默认动作
-            params = pendingAction?.params || {};
+            console.log(`[Session: ${sessionIdRef.current}] 无工具调用，继续之前的对话`);
+            setStatus('idle');
+            setIsConfirming(false);
+            // 重新开始监听，继续对话流程
+            if (!isListening) {
+                startListening();
+            }
         }
-
-        const currentSessionId = sessionIdRef.current;
-
-        console.log(`[Session: ${currentSessionId}] 准备执行工具: ${toolId}，参数:`, params);
-
-        // 清除任何现有的自动重置计时器
-        if (resetTimerRef.current) {
-            clearTimeout(resetTimerRef.current);
-            resetTimerRef.current = null;
-        }
-
-        // 执行工具调用
-        executeToolAndHandleResult(toolId, params, currentSessionId, userId);
-    }, [isConfirming, pendingAction, speak, cancelTTS, resetUIState, isSpeaking, isListening, executeToolAndHandleResult]);
+    }, [isConfirming, pendingAction, cancelTTS, executeToolAndHandleResult, isListening, isSpeaking, startListening]);
 
     const handleUserRetry = useCallback(() => {
         cancelTTS();
         setIsConfirmModalOpen(false);
         setIsConfirming(false); // 重置确认状态锁
-        console.log('User chose to retry.');
+        console.log('User chose to retry – removing last dialogue');
+
+        // 删除上一次对话（最后一条 AI 确认文本及其之前的用户语句）
+        setMessages(prev => {
+            const newMsgs = [...prev];
+            if (newMsgs.length === 0) return prev;
+
+            // 移除末尾 AI 确认文本（与 confirmText 内容相同）
+            if (newMsgs[newMsgs.length - 1].role === 'ai' && newMsgs[newMsgs.length - 1].content === confirmText) {
+                newMsgs.pop();
+            }
+
+            // 移除对应的用户发言
+            if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role === 'user') {
+                newMsgs.pop();
+            }
+
+            return newMsgs;
+        });
+
         setStatus('idle');
         setLastResponse(null);
         setPendingAction(null);
-    }, [cancelTTS]);
+    }, [cancelTTS, confirmText]);
 
     const handleUserCancel = useCallback(() => {
         console.log(`[Session: ${sessionIdRef.current}] 用户取消了操作`);
@@ -401,6 +470,14 @@ const MainPage = () => {
         setStatus('listening_confirm');
     }, []);
 
+    // 清除历史对话
+    const handleClearHistory = useCallback(() => {
+        setMessages([]);
+        setLastTranscript('');
+        setLastResponse(null);
+        setResultData(null);
+    }, []);
+
     // UI Rendering
     return (
         <motion.div
@@ -414,14 +491,28 @@ const MainPage = () => {
         >
             <StatusBar currentStatus={status} lastTranscript={lastTranscript} lastResponse={lastResponse} />
 
-            {/* 进度条 */}
+            {/* 进度条弹窗 */}
             <AnimatePresence>
                 {(status === 'listening' || status === 'thinking' || status === 'executing' || status === 'completed') && (
-                    <ProgressBar
-                        currentStage={status}
-                        visible={true}
-                        className="main-page-progress"
-                    />
+                    <motion.div
+                        className="progress-modal-overlay"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                    >
+                        <motion.div
+                            className="progress-modal-content"
+                            initial={{ scale: 0.9, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0.9, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                        >
+                            <ProgressBar
+                                currentStage={status}
+                                visible={true}
+                            />
+                        </motion.div>
+                    </motion.div>
                 )}
             </AnimatePresence>
 
@@ -452,62 +543,70 @@ const MainPage = () => {
 
                 {/* 主内容区 */}
                 <div className="content-area">
-                    <div className="messages-container">
-                        {lastTranscript && (
-                            <motion.div
-                                className="transcript user-message"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3 }}
-                            >
-                                <div className="message-header">你说</div>
-                                <div className="message-content">{lastTranscript}</div>
-                            </motion.div>
-                        )}
+                    <div className="conversation-box">
+                        <div className="messages-container">
+                            {/* 清除历史按钮 */}
+                            {messages.length > 0 && (
+                                <button className="clear-history-btn" onClick={handleClearHistory}>
+                                    清除历史
+                                </button>
+                            )}
 
-                        {typeof lastResponse === 'string' && lastResponse && (
-                            <motion.div
-                                className="ai-response system-message"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3 }}
-                            >
-                                <div className="message-header">AI</div>
-                                <div className="message-content">{lastResponse}</div>
-                            </motion.div>
-                        )}
+                            {/* 多轮对话渲染 */}
+                            {messages.map(msg => (
+                                <motion.div
+                                    key={msg.id}
+                                    className={`${msg.role === 'user' ? 'transcript user-message' : 'ai-response system-message'}`}
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <div className="message-header">{msg.role === 'user' ? '你说' : 'AI'}</div>
+                                    <div className="message-content">{msg.content}</div>
+                                </motion.div>
+                            ))}
 
-                        {lastResponse && typeof lastResponse === 'object' && lastResponse.status !== 'success' && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3 }}
-                                className="result-container"
-                            >
-                                <ResultDisplay
-                                    status={lastResponse.status}
-                                    message={lastResponse.message}
-                                    autoSpeak={false}
-                                />
-                            </motion.div>
-                        )}
+                            {/* 已移除单条渲染，改由 messages 数组统一渲染 */}
 
-                        {resultData && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.3 }}
-                                className="result-container"
-                            >
-                                <ResultDisplay
-                                    status={resultData.status}
-                                    data={resultData.data}
-                                    message={resultData.message}
-                                    autoSpeak={true}
-                                    onDismiss={handleReset}
-                                />
-                            </motion.div>
-                        )}
+                            {lastResponse && typeof lastResponse === 'object' && lastResponse.status !== 'success' && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="result-container"
+                                >
+                                    <ResultDisplay
+                                        status={lastResponse.status}
+                                        message={lastResponse.message}
+                                        autoSpeak={false}
+                                    />
+                                </motion.div>
+                            )}
+
+                            {resultData && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: 20 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.3 }}
+                                    className="result-container"
+                                >
+                                    <ResultDisplay
+                                        status={resultData.status}
+                                        data={resultData.data}
+                                        message={resultData.message}
+                                        autoSpeak={true}
+                                        onDismiss={handleReset}
+                                    />
+                                </motion.div>
+                            )}
+                        </div>
+                        {/* Voice Recorder 放置对话框底部 */}
+                        <VoiceRecorder
+                            onResult={handleVoiceResult}
+                            onError={handleVoiceError}
+                            setStatus={setStatus}
+                            disabled={!['idle', 'listening'].includes(status)}
+                        />
                     </div>
 
                     {/* 重置按钮 */}
@@ -524,36 +623,28 @@ const MainPage = () => {
                             重新开始
                         </motion.button>
                     )}
-
-                    {/* 语音输入按钮 */}
-                    <VoiceRecorder
-                        onResult={handleVoiceResult}
-                        onError={handleVoiceError}
-                        setStatus={setStatus}
-                        disabled={!['idle', 'listening'].includes(status)} // 允许在idle和listening状态下使用录音按钮
-                    />
                 </div>
-            </div>
 
-            {/* 确认对话框 */}
-            <AnimatePresence>
-                {isConfirmModalOpen && (
-                    <ConfirmationModal
-                        isOpen={isConfirmModalOpen}
-                        confirmText={confirmText}
-                        onConfirm={handleUserConfirm}
-                        onRetry={handleUserRetry}
-                        onCancel={handleUserCancel}
-                        isListening={isListening}
-                        isTTSSpeaking={isSpeaking}
-                        useVoiceConfirmation={true}
-                        startSTTListening={startListening}
-                        stopSTTListening={stopListening}
-                        onTTSCompleted={handleTTSCompleted}
-                        voiceTranscript={voiceTranscript}
-                    />
-                )}
-            </AnimatePresence>
+                {/* 确认对话框 */}
+                <AnimatePresence>
+                    {isConfirmModalOpen && (
+                        <ConfirmationModal
+                            isOpen={isConfirmModalOpen}
+                            confirmText={confirmText}
+                            onConfirm={handleUserConfirm}
+                            onRetry={handleUserRetry}
+                            onCancel={handleUserCancel}
+                            isListening={isListening}
+                            isTTSSpeaking={isSpeaking}
+                            useVoiceConfirmation={true}
+                            startSTTListening={startListening}
+                            stopSTTListening={stopListening}
+                            onTTSCompleted={handleTTSCompleted}
+                            voiceTranscript={voiceTranscript}
+                        />
+                    )}
+                </AnimatePresence>
+            </div>
         </motion.div>
     );
 };
